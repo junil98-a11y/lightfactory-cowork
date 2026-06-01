@@ -1,0 +1,47 @@
+name: Deploy to GitHub Pages
+
+# main/master에 push되면 자동 배포 (수동 실행도 가능)
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 동시 배포 1개로 제한 (진행 중이면 취소 후 최신으로)
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # shop/index.html → dist/ 로 복사. 단일 페이지라 404.html에도 동일 복사
+      # (GitHub Pages는 _redirects 미지원 → 404 폴백으로 직접 URL 접근 대응)
+      - name: Build (copy shop/index.html → dist)
+        run: |
+          mkdir -p dist
+          cp shop/index.html dist/index.html
+          cp shop/index.html dist/404.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
