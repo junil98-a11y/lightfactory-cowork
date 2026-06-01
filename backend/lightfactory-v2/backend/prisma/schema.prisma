@@ -1,0 +1,394 @@
+// ============================================================
+//  라이트팩토리 — Prisma Schema (PostgreSQL)
+//  버전: 2.0 (프론트/백엔드 분리 배포용)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")   // Supabase 마이그레이션용 직접 연결
+}
+
+// ── ENUM ────────────────────────────────────────────────────
+
+enum UserRole        { consumer business admin }
+enum UserStatus      { active inactive }
+enum ApprovalStatus  { pending approved rejected }
+enum PriceTierCode   { consumer T1 T2 T3 }
+enum OrderStatus     { pending paid preparing shipped delivered cancelled refunded }
+enum EcountSyncStatus{ pending sent failed }
+
+// ── 회원 ────────────────────────────────────────────────────
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  phone        String?
+  role         UserRole   @default(consumer)
+  status       UserStatus @default(active)
+  refreshToken String?    @map("refresh_token")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt      @map("updated_at")
+
+  businessProfile  BusinessProfile?  @relation("UserProfile")
+  approvedProfiles BusinessProfile[] @relation("ApprovedBy")
+  orders           Order[]
+  cartItems        CartItem[]
+  priceChangeLogs  PriceChangeLog[]  @relation("ChangedBy")
+  productPrices    ProductPrice[]    @relation("CreatedBy")
+  // 2026-06-01 B2B 로드맵 기능 (프론트 → 백엔드 이관용)
+  addresses        ShippingAddress[]
+  favorites        Favorite[]
+  customerPrices   CustomerPrice[]
+  rmas             Rma[]
+
+  @@index([email])
+  @@index([role, status])
+  @@map("users")
+}
+
+// ── 사업자 프로필 ────────────────────────────────────────────
+model BusinessProfile {
+  id             String         @id @default(uuid())
+  userId         String         @unique @map("user_id")
+  companyName    String         @map("company_name")
+  businessNumber String         @unique @map("business_number")
+  industry       String?
+  approvalStatus ApprovalStatus @default(pending) @map("approval_status")
+  priceTier      PriceTierCode? @map("price_tier")
+  approvedById   String?        @map("approved_by")
+  approvedAt     DateTime?      @map("approved_at")
+  rejectReason   String?        @map("reject_reason")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt      @map("updated_at")
+
+  user       User  @relation("UserProfile", fields: [userId],       references: [id], onDelete: Cascade)
+  approvedBy User? @relation("ApprovedBy",  fields: [approvedById], references: [id])
+
+  @@index([approvalStatus])
+  @@map("business_profiles")
+}
+
+// ── 단가 등급 기준 ───────────────────────────────────────────
+model PriceTier {
+  id           String        @id @default(uuid())
+  tierCode     PriceTierCode @unique @map("tier_code")
+  tierName     String        @map("tier_name")
+  discountRate Decimal       @db.Decimal(5,4) @map("discount_rate") // 0.3000 = 30%
+  description  String?
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@map("price_tiers")
+}
+
+// ── 카테고리 (무한 계층) ─────────────────────────────────────
+model Category {
+  id        String   @id @default(uuid())
+  parentId  String?  @map("parent_id")
+  name      String
+  slug      String   @unique
+  depth     Int      @default(0)
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@index([parentId])
+  @@index([slug])
+  @@index([depth, sortOrder])
+  @@map("categories")
+}
+
+// ── 상품 ─────────────────────────────────────────────────────
+model Product {
+  id             String   @id @default(uuid())
+  categoryId     String   @map("category_id")
+  name           String
+  sku            String   @unique
+  description    String?  @db.Text
+  detailHtml     String?  @db.Text    @map("detail_html")   // 상세 설명 HTML
+  basePrice      Decimal  @db.Decimal(12,2) @map("base_price")
+  stockQty       Int      @default(0) @map("stock_qty")
+  unit           String   @default("개")
+  brand          String?
+  isFeatured     Boolean  @default(false) @map("is_featured")  // 인기상품
+  isActive       Boolean  @default(true)  @map("is_active")
+  youtubeUrl     String?  @map("youtube_url")
+  naverProductNo   String?   @map("naver_product_no")    // 스마트스토어 상품번호
+  naverCategoryId  String?   @map("naver_category_id")   // 네이버 카테고리 코드
+  naverSyncStatus  String?   @map("naver_sync_status")   // 'none'|'synced'|'failed'
+  naverSyncedAt    DateTime? @map("naver_synced_at")     // 마지막 동기화 시각
+  naverSyncMsg     String?   @map("naver_sync_msg")      // 실패 시 오류 메시지
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt      @map("updated_at")
+
+  category   Category       @relation(fields: [categoryId], references: [id])
+  prices     ProductPrice[]
+  orderItems OrderItem[]
+  images     ProductImage[]
+  cartItems  CartItem[]
+  priceLogs  PriceChangeLog[]
+  // 2026-06-01 신규 기능 역참조
+  favorites      Favorite[]
+  customerPrices CustomerPrice[]
+
+  @@index([categoryId])
+  @@index([sku])
+  @@index([isActive, isFeatured])
+  @@map("products")
+}
+
+// ── 상품 이미지 ──────────────────────────────────────────────
+model ProductImage {
+  id        String  @id @default(uuid())
+  productId String  @map("product_id")
+  url       String
+  altText   String? @map("alt_text")
+  sortOrder Int     @default(0) @map("sort_order")
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+// ── 상품 단가 (이력형) ───────────────────────────────────────
+model ProductPrice {
+  id            String        @id @default(uuid())
+  productId     String        @map("product_id")
+  tierCode      PriceTierCode @map("tier_code")
+  price         Decimal       @db.Decimal(12,2)
+  discountRate  Decimal?      @db.Decimal(5,4) @map("discount_rate")
+  effectiveFrom DateTime      @default(now()) @map("effective_from")
+  effectiveTo   DateTime?     @map("effective_to")  // null = 현재 유효
+  createdById   String        @map("created_by")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  product   Product @relation(fields: [productId],   references: [id], onDelete: Cascade)
+  createdBy User    @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@index([productId, tierCode])
+  @@index([effectiveTo])
+  @@map("product_prices")
+}
+
+// ── 단가 변경 이력 ────────────────────────────────────────────
+model PriceChangeLog {
+  id           String        @id @default(uuid())
+  productId    String        @map("product_id")
+  tierCode     PriceTierCode @map("tier_code")
+  oldPrice     Decimal       @db.Decimal(12,2) @map("old_price")
+  newPrice     Decimal       @db.Decimal(12,2) @map("new_price")
+  reason       String?
+  changedById  String        @map("changed_by")
+  changedAt    DateTime      @default(now()) @map("changed_at")
+
+  product   Product @relation(fields: [productId],   references: [id])
+  changedBy User    @relation("ChangedBy", fields: [changedById], references: [id])
+
+  @@index([productId])
+  @@map("price_change_logs")
+}
+
+// ── 장바구니 ─────────────────────────────────────────────────
+model CartItem {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  productId String   @map("product_id")
+  quantity  Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user    User    @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@map("cart_items")
+}
+
+// ── 주문 ─────────────────────────────────────────────────────
+model Order {
+  id             String            @id @default(uuid())
+  userId         String            @map("user_id")
+  orderNumber    String            @unique @map("order_number")
+  appliedTier    PriceTierCode     @map("applied_tier")
+  totalAmount    Decimal           @db.Decimal(12,2) @map("total_amount")
+  shippingCost   Decimal           @db.Decimal(12,2) @default(0) @map("shipping_cost")
+  finalAmount    Decimal           @db.Decimal(12,2) @map("final_amount")
+  status         OrderStatus       @default(pending)
+  shippingName   String?           @map("shipping_name")
+  shippingPhone  String?           @map("shipping_phone")
+  shippingAddr   String?           @map("shipping_addr")
+  shippingMemo   String?           @map("shipping_memo")
+  payMethod      String?           @map("pay_method")
+  payKey         String?           @map("pay_key")        // 토스페이먼츠 paymentKey
+  trackingNo     String?           @map("tracking_no")
+  courier        String?
+  ecountOrderNo  String?           @map("ecount_order_no")
+  ecountStatus   EcountSyncStatus  @default(pending) @map("ecount_status")
+  memo           String?
+  orderedAt      DateTime          @default(now()) @map("ordered_at")
+  updatedAt      DateTime          @updatedAt      @map("updated_at")
+
+  user  User        @relation(fields: [userId], references: [id])
+  items OrderItem[]
+  rmas  Rma[]       // 2026-06-01 취소·반품·교환
+
+  @@index([userId])
+  @@index([status])
+  @@index([orderedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String        @id @default(uuid())
+  orderId     String        @map("order_id")
+  productId   String        @map("product_id")
+  productName String        @map("product_name")
+  productSku  String        @map("product_sku")
+  quantity    Int
+  unitPrice   Decimal       @db.Decimal(12,2) @map("unit_price")
+  appliedTier PriceTierCode @map("applied_tier")
+  subtotal    Decimal       @db.Decimal(12,2)
+
+  order   Order   @relation(fields: [orderId],   references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ── 배너 ─────────────────────────────────────────────────────
+model Banner {
+  id        String   @id @default(uuid())
+  slotKey   String   @unique @map("slot_key")  // 'main' | 'mid1' | 'mid2' | 'bottom'
+  imageUrl  String?  @map("image_url")
+  linkUrl   String?  @map("link_url")
+  altText   String?  @map("alt_text")
+  isActive  Boolean  @default(true) @map("is_active")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("banners")
+}
+
+// ── 알림 발송 이력 ────────────────────────────────────────────
+model NotificationLog {
+  id         String   @id @default(uuid())
+  type       String   // 'kakao' | 'email'
+  recipient  String   // 전화번호 또는 이메일
+  template   String   // 알림톡 템플릿 코드 또는 이메일 제목
+  status     String   // 'sent' | 'failed'
+  errorMsg   String?  @map("error_msg")
+  sentAt     DateTime @default(now()) @map("sent_at")
+
+  @@index([recipient])
+  @@index([sentAt])
+  @@map("notification_logs")
+}
+
+// ════════════════════════════════════════════════════════════
+//  2026-06-01 B2B 로드맵 신규 모델 (프론트 단일 HTML → 백엔드 이관)
+//  프론트(shop/index.html)에서 localStorage로 구현한 4개 기능을
+//  서버 영속화하기 위한 스키마. 마이그레이션: npx prisma migrate dev
+// ════════════════════════════════════════════════════════════
+
+enum RmaType   { cancel return exchange }
+enum RmaStatus { requested approved done rejected }
+
+// ── 다중 배송지(주소록) — 현장별 직배송 ──────────────────────
+model ShippingAddress {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  label     String                              // '강남 현장' 등 라벨
+  recipient String
+  phone     String
+  zipcode   String?
+  addr1     String
+  addr2     String?
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("shipping_addresses")
+}
+
+// ── 즐겨찾기 SKU — 반복 발주 ─────────────────────────────────
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  productId String   @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@map("favorites")
+}
+
+// ── 거래처별 단가 커스터마이즈 ────────────────────────────────
+//  ProductPrice(등급별)보다 우선. discountRate 0.3000 = 30% 할인.
+model CustomerPrice {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  productId    String   @map("product_id")
+  discountRate Decimal  @db.Decimal(5,4) @map("discount_rate")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  user    User    @relation(fields: [userId],    references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@map("customer_prices")
+}
+
+// ── RMA(취소·반품·교환) ──────────────────────────────────────
+model Rma {
+  id          String     @id @default(uuid())
+  rmaNumber   String     @unique @map("rma_number")  // RMA-YYYYMMDD-NNN
+  orderId     String     @map("order_id")
+  userId      String     @map("user_id")
+  type        RmaType
+  status      RmaStatus  @default(requested)
+  reason      String
+  detail      String?
+  amount      Decimal    @db.Decimal(12,2)
+  requestedAt DateTime   @default(now()) @map("requested_at")
+  processedAt DateTime?  @map("processed_at")
+
+  order Order     @relation(fields: [orderId], references: [id])
+  user  User      @relation(fields: [userId],  references: [id])
+  items RmaItem[]
+
+  @@index([status])
+  @@index([orderId])
+  @@map("rmas")
+}
+
+model RmaItem {
+  id        String  @id @default(uuid())
+  rmaId     String  @map("rma_id")
+  productId String  @map("product_id")
+  quantity  Int
+
+  rma Rma @relation(fields: [rmaId], references: [id], onDelete: Cascade)
+
+  @@index([rmaId])
+  @@map("rma_items")
+}

@@ -1,0 +1,19 @@
+# 로컬 확인용 임시 정적 서버 (배포·저장소와 무관)
+shop/_devserver.js
+
+# 검증용 임시 산출물
+shop/_*.png
+shop/_chk_*.js
+shop/._*.js
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+*.log
+
+# Node (백엔드 이관 시)
+node_modules/
+.env
+
+# 중복 추출본(임베디드 git 저장소 포함) — 정본은 lightfactory-v2-naver.tar.gz + backend/lightfactory-v2/
+backend/lightfactory-v2-naver/
