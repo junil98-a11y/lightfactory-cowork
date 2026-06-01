@@ -1,0 +1,12 @@
+# 라이트팩토리 — Netlify 배포 설정 (2026-06-01)
+# shop/index.html(현재 코드)을 dist/로 복사해 배포 → 항상 최신본이 올라감.
+# 배포: Netlify에 이 저장소 연결(Git) 또는 `netlify deploy --prod`
+[build]
+  publish = "dist"
+  command = "mkdir -p dist && cp shop/index.html dist/index.html && printf '/*    /index.html    200\\n' > dist/_redirects"
+
+# 단일 페이지 — 모든 경로를 index.html로 (직접 URL 접근 대비)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

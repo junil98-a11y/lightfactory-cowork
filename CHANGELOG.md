@@ -6,6 +6,11 @@
 
 ## [2026-06-01] — B2B 로드맵 일괄 구현
 
+### Added — 서버 배포 환경 준비 (Netlify/Vercel)
+- 루트에 `netlify.toml`·`vercel.json` 추가 — `shop/index.html`을 `dist/`로 복사해 배포(항상 최신 코드). Git 연결/CLI(`netlify deploy`/`vercel`) 무설정 배포.
+- `shop/lightfactory-netlify.tar.gz`를 현재 코드로 재생성(드래그앤드롭용, 옛 버전 함정 제거).
+- `docs/deploy-2026-06-01.md` — 3가지 배포 방법 + 비-localhost 주의점(HTTPS·dev패널 역할전환 제한·관리자 계정) + 배포 후 스모크 테스트 체크리스트.
+
 ### Fixed — 주문 시 재고 차감 누락 (재고 정합)
 - 주문 확정 후 `p.stock`을 차감하지 않아 오버셀·재고 미감소 + RMA 복원 시 재고 부풀림이 발생하던 문제 수정. 3개 주문 경로(proceedToOrder/데모/토스)에 `decrementStockFor(orderItems)` 추가 → 주문 시 차감, RMA 취소·반품 승인 시 복원으로 정합. 헤드리스로 23→20(주문)→23(RMA복원) 검증.
 

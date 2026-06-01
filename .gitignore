@@ -15,5 +15,10 @@ Thumbs.db
 node_modules/
 .env
 
+# 배포 빌드 산출물 (netlify.toml/vercel.json이 shop/index.html에서 생성)
+dist/
+.netlify/
+.vercel/
+
 # 중복 추출본(임베디드 git 저장소 포함) — 정본은 lightfactory-v2-naver.tar.gz + backend/lightfactory-v2/
 backend/lightfactory-v2-naver/
