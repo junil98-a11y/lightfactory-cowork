@@ -6708,6 +6708,7 @@ function proceedToOrder() {
   });
 
   saveOrders(); // proceedToOrder 주문 → localStorage 저장
+  decrementStockFor(orderItems); // 2026-06-01 재고 차감
   cart = [];
   updateCartBadge();
   goShop();
@@ -7220,6 +7221,7 @@ function submitOrder() {
 
     // 주문 → localStorage 저장
     saveOrders();
+    decrementStockFor(orderItems); // 2026-06-01 재고 차감
     // 장바구니 비우기
     cart = [];
     updateCartBadge();
@@ -9259,6 +9261,7 @@ async function submitOrderWithToss() {
       taxInvoiceRequested: false,  // 세금계산서 신청 여부 (B2B)
     });
     saveOrders();
+    decrementStockFor(orderItems); // 2026-06-01 재고 차감
     cart = [];
     updateCartBadge();
 
@@ -10654,6 +10657,16 @@ function optKeyOf(opts){
 // 주문/요약용 옵션 라벨 (예: " [화이트/대]")
 function optLabelOf(item){
   return (item && item.opts && Object.keys(item.opts).length) ? ' [' + Object.values(item.opts).join('/') + ']' : '';
+}
+// 2026-06-01 주문 확정 시 재고 차감 — orderItems[{prodId, qty}] 기준
+// (RMA 취소·반품 승인 시 processRma에서 +qty로 복원 → 차감/복원 정합)
+function decrementStockFor(orderItems){
+  let changed = false;
+  (orderItems || []).forEach(it => {
+    const p = PRODS.find(x => x.id === it.prodId);
+    if (p) { p.stock = Math.max(0, (p.stock || 0) - it.qty); changed = true; }
+  });
+  if (changed) saveProds();
 }
 
 /* ════════ 전사 티어 할인율 팝업 (상품목록 우상단) — 2026-06-01 ════════
