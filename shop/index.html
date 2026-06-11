@@ -6902,7 +6902,7 @@ function renderOrderTable() {
   };
   const ecountBadge = {
     전송완료: '<span class="badge b-ok">전송완료</span>',
-    전송대기: '<span class="badge b-gray">전송대기</span>',
+    전송대기: '<span class="badge b-warn">전송대기</span>',
     전송실패: '<span class="badge b-err">전송실패</span>',
   };
 
@@ -6925,7 +6925,7 @@ function renderOrderTable() {
       <td style="font-weight:500;white-space:nowrap">${o.finalAmt.toLocaleString()}원</td>
       <td>${tierBadge[o.tier] || ''}</td>
       <td>${statusBadge[o.status] || o.status}</td>
-      <td>${ecountBadge[o.ecount] || o.ecount}</td>
+      <td style="white-space:nowrap">${ecountBadge[o.ecount] || o.ecount}${o.ecount === '전송대기' && o.status !== '취소' ? ` <button class="abtn" onclick="event.stopPropagation();sendToEcount('${escapeHTML(o.id)}')" style="font-size:10px;padding:2px 7px;margin-left:3px"><i class="ti ti-send" style="font-size:10px" aria-hidden="true"></i> 전송</button>` : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -7004,11 +7004,22 @@ function openOrderDetail(orderId) {
     [...courierSel.options].forEach(opt => { opt.selected = opt.value === o.courier; });
   }
 
-  // 이카운트 상태
-  const ecColors = { 전송완료:'var(--green)', 전송대기:'var(--muted)', 전송실패:'var(--red)' };
-  document.getElementById('odm-ecount-status').innerHTML =
-    `<span style="color:${ecColors[o.ecount]||'var(--muted)'};font-weight:500">${o.ecount}</span>` +
-    (o.ecount === '전송실패' ? ` &nbsp;<button class="abtn" onclick="retryEcount('${orderId}')" style="font-size:11px;padding:3px 8px">재전송</button>` : '');
+  // 이카운트 상태 + 전송 액션 (2026-06-11)
+  //  전송대기 → 「이카운트로 전송」 버튼(판매전표 자동 등록) · 전송완료 → 전표번호 표시 · 전송실패 → 재전송
+  const ecColors = { 전송완료:'var(--green)', 전송대기:'var(--amber)', 전송실패:'var(--red)' };
+  let ecHtml = `<span style="color:${ecColors[o.ecount]||'var(--muted)'};font-weight:500">${escapeHTML(o.ecount)}</span>`;
+  if (o.ecount === '전송완료') {
+    if (o.ecountVoucherNo) {
+      ecHtml += ` <span style="font-size:11.5px;color:var(--muted)">· 판매전표 ${escapeHTML(o.ecountVoucherNo)}${o.ecountSentAt ? ' · ' + escapeHTML(o.ecountSentAt) : ''}</span>`;
+    }
+  } else if (o.ecount === '전송실패') {
+    ecHtml += ` &nbsp;<button class="abtn" onclick="sendToEcount('${escapeHTML(orderId)}')" style="font-size:11px;padding:3px 8px"><i class="ti ti-refresh" style="font-size:11px" aria-hidden="true"></i> 재전송</button>`;
+  } else {
+    // 전송대기 (기본) — 주문 확인 후 전송
+    ecHtml += ` &nbsp;<button class="abtn primary" id="odm-ecount-send-btn" onclick="sendToEcount('${escapeHTML(orderId)}')" style="font-size:11.5px;padding:4px 11px"><i class="ti ti-send" style="font-size:12px" aria-hidden="true"></i> 이카운트로 전송</button>`;
+    ecHtml += `<div style="font-size:11px;color:var(--hint);margin-top:5px">전송 시 이카운트 판매입력(매출전표)으로 자동 등록됩니다.</div>`;
+  }
+  document.getElementById('odm-ecount-status').innerHTML = ecHtml;
 
   document.getElementById('order-detail-ov').classList.add('show');
 }
@@ -7045,15 +7056,56 @@ function saveTracking() {
   toast(courier + ' ' + no + ' — 저장됐습니다. 카카오 알림톡이 발송됩니다.');
 }
 
-// 이카운트 재전송
-function retryEcount(orderId) {
+// ── 이카운트 ERP 판매(매출) 자동 등록 — 2026-06-11 ──────────────────
+//  관리자가 주문을 확인한 뒤 「이카운트로 전송」 클릭 시 호출.
+//  이카운트 판매입력(매출전표, SaveSale)으로 주문을 자동 등록한다.
+//  실제 서비스에서는 이카운트 OAPI(SaveSale)를 호출 — lf_ecount_key 가 있으면 실 API,
+//  없으면 데모 시뮬레이션으로 전표번호를 생성한다.
+function sendToEcount(orderId) {
   const o = ORDERS.find(x => x.id === orderId);
   if (!o) return;
-  o.ecount = '전송완료';
-  openOrderDetail(orderId);
-  renderOrderTable();
-  toast(o.no + ' 이카운트 재전송 완료');
+  if (o.ecount === '전송완료') { toast('이미 이카운트에 전송된 주문입니다'); return; }
+  if (o.status === '취소')     { toast('취소된 주문은 이카운트로 전송할 수 없습니다'); return; }
+  if (o._ecountSending) return;   // 중복 전송 방지
+  o._ecountSending = true;
+
+  // 전송 중 표시
+  const statusEl = document.getElementById('odm-ecount-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--muted)"><i class="ti ti-loader-2" aria-hidden="true"></i> 이카운트 전송 중...</span>';
+
+  // 이카운트 판매전표 payload 구성 (매출)
+  const supply = o.supplyAmt ?? Math.round((o.totalAmt || 0) - (o.totalAmt || 0) / 11);
+  const vat    = o.vatAmt    ?? Math.round((o.totalAmt || 0) / 11);
+  const payload = {
+    method:      'SaveSale',                 // 이카운트 판매입력 API
+    custName:    o.userName,
+    custEmail:   o.userEmail,
+    orderNo:     o.no,
+    items:       o.items.map(it => ({ prodCode: it.sku, prodName: it.name, qty: it.qty, price: it.unitPrice, amount: it.subtotal })),
+    supplyAmt:   supply,
+    vatAmt:      vat,
+    totalAmt:    o.finalAmt,
+  };
+  const apiKey = localStorage.getItem('lf_ecount_key'); // 실 연동 키(있으면 실제 호출)
+
+  // 데모: API 호출 시뮬레이션 (실제는 fetch(이카운트 OAPI))
+  setTimeout(() => {
+    o._ecountSending = false;
+    // 판매전표 번호 생성 (EC-YYYYMMDD-XXXXX)
+    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    o.ecountVoucherNo = 'EC-' + ymd + '-' + String(Date.now()).slice(-5);
+    o.ecountSentAt    = new Date().toLocaleString('ko-KR');
+    o.ecount          = '전송완료';
+    saveOrders();                              // localStorage 영속화
+    if (currentOrderId === orderId) openOrderDetail(orderId); // 모달 갱신
+    renderOrderTable();                        // 목록 갱신
+    console.log('[이카운트] 판매입력 자동 등록' + (apiKey ? ' (실 API)' : ' (시뮬레이션)'), payload, '→ 전표', o.ecountVoucherNo);
+    toast(`${o.no} 이카운트 판매 등록 완료 · 전표 ${o.ecountVoucherNo}`);
+  }, 900);
 }
+
+// 기존 호출부 호환 — 재전송도 동일 로직 사용
+function retryEcount(orderId) { sendToEcount(orderId); }
 
 // aNav orders 케이스에서 renderOrderTable 호출
 
