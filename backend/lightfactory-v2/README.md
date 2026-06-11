@@ -72,4 +72,20 @@ cd frontend && npx serve public -p 3000   # http://localhost:3000
 | GET  | /api/admin/members | (관리자) 회원 목록 |
 | PATCH| /api/admin/members | (관리자) 사업자 승인 |
 | POST | /api/admin/kakao/promo | (관리자) 홍보 발송 |
+| POST | /api/admin/ecount/send | (관리자) 이카운트 수동 일괄 전송 (`{all?}`) |
 | POST | /api/upload | (관리자) 이미지 업로드 |
+
+## 스케줄 (Vercel Cron)
+
+| 경로 | 스케줄(UTC) | KST | 설명 |
+|------|-------------|-----|------|
+| /api/cron/sync-stock   | `0 */2 * * *` | 2시간마다 | 이카운트 재고 동기화 |
+| /api/cron/ecount-send  | `0 5 * * *`   | **매일 14:00** | 그 시각까지 등록된 전송대기 주문을 이카운트 판매입력(매출전표)으로 자동 등록 |
+
+- **인증**: Vercel Cron이 `Authorization: Bearer ${CRON_SECRET}` 헤더를 자동 첨부. 수동 호출 시에도 동일 헤더 필요.
+- **시간대 주의**: Vercel Cron은 UTC 기준 → "오후 2시 KST"는 `0 5 * * *`(05:00 UTC). 코드의 `kstCutoffToday(14)`가 KST 14:00의 절대시각을 계산해 `orderedAt <= cutoff` 로 "2시까지 등록분"만 전송한다.
+- **전체 재전송**(시각 무관): `GET /api/cron/ecount-send?all=1` 또는 관리자 `POST /api/admin/ecount/send {"all":true}`.
+- **이카운트 키 미설정 시**: 실제 OAPI 호출 없이 시뮬레이션으로 전표번호(`EC-YYYYMMDD-XXXXX`)만 발번(프론트 데모와 동일). 운영 시 `.env`의 `ECOUNT_*` 채우면 실제 `Sale/SaveSale` 호출.
+- 핵심 로직은 `src/lib/ecount.ts`의 `runEcountAutoSend()` — 크론과 관리자 수동 전송이 공통 사용.
+
+> 프론트(`shop/index.html`)의 클라이언트측 오후 2시 스케줄러는 **단독 데모용**(관리자 화면 열림 시에만 동작). 백엔드 배포 후에는 이 크론이 무인(24/7) 자동 전송의 단일 소스가 된다.
