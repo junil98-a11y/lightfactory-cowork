@@ -2167,6 +2167,27 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
           <div class="stat-c"><div class="stat-n">12</div><div class="stat-lbl">등록 상품 수</div></div>
           <div class="stat-c"><div class="stat-n">8</div><div class="stat-lbl">이카운트 거래처 수</div></div>
         </div>
+        <!-- 자동 전송 스케줄 (매일 오후 2시) — 2026-06-11 -->
+        <div class="a-card" style="margin-bottom:14px">
+          <div class="a-card-head">
+            <div class="a-card-title"><i class="ti ti-clock-hour-2" aria-hidden="true"></i>주문 자동 전송 스케줄</div>
+            <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer">
+              <input type="checkbox" id="ecount-autosend-toggle" onchange="toggleEcountAutoSend(this.checked)" style="cursor:pointer">
+              <span>매일 오후 2시 자동 전송</span>
+            </label>
+          </div>
+          <div style="padding:14px 16px">
+            <div id="ecount-schedule-info" style="font-size:12.5px;color:var(--muted);line-height:1.7">—</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px">
+              <button class="abtn primary" onclick="autoSendEcountBatch({})"><i class="ti ti-send" style="font-size:12px" aria-hidden="true"></i> 지금 전송대기 일괄 전송</button>
+            </div>
+            <div style="font-size:11px;color:var(--hint);margin-top:11px;line-height:1.6;background:var(--bg);border-radius:var(--r2);padding:9px 11px">
+              <i class="ti ti-info-circle" style="font-size:11px" aria-hidden="true"></i>
+              매일 <strong>오후 2시</strong>에 그 시각까지 등록된 <strong>전송대기</strong> 주문을 이카운트 판매입력(매출전표)으로 자동 등록합니다. 2시 이후 접속 시 당일분을 캐치업 전송합니다.
+              <br><span style="color:var(--amber)">※ 자동 전송은 관리자 화면이 열려 있는 동안 동작합니다. 브라우저가 닫혀 있어도 실행되는 무인 스케줄은 백엔드 연동이 필요합니다.</span>
+            </div>
+          </div>
+        </div>
         <div class="a-card">
           <div class="a-card-head"><div class="a-card-title"><i class="ti ti-refresh" aria-hidden="true"></i>수동 동작</div></div>
           <div style="padding:14px 16px;display:flex;gap:8px;flex-wrap:wrap">
@@ -4390,6 +4411,7 @@ function aNav(page,btn){
   if(page==='members'){renderConsumerTable();renderBizTable();renderBizTierSummary();}
   if(page==='prices'){initPricesPage();}
   if(page==='rma'){renderAdminRma();}  // 2026-06-01 취소·반품·교환 관리
+  if(page==='ecount'){renderEcountSchedule();ecountAutoSchedulerTick();}  // 2026-06-11 이카운트 자동전송 스케줄
 }
 
 function renderAdminApprovals(){
@@ -6801,7 +6823,7 @@ function proceedToOrder() {
     finalAmt:  final,
     status:    '결제완료',
     ecount:    '전송대기',
-    orderedAt: new Date().toLocaleString('ko-KR'),
+    orderedAt: new Date().toLocaleString('ko-KR'), orderedTs: Date.now(),
     trackingNo: '',
     courier:   '',
   });
@@ -7057,10 +7079,42 @@ function saveTracking() {
 }
 
 // ── 이카운트 ERP 판매(매출) 자동 등록 — 2026-06-11 ──────────────────
-//  관리자가 주문을 확인한 뒤 「이카운트로 전송」 클릭 시 호출.
+//  관리자가 주문을 확인한 뒤 「이카운트로 전송」 클릭 시(단건) 또는
+//  매일 오후 2시 자동 스케줄/수동 일괄(다건)로 호출된다.
 //  이카운트 판매입력(매출전표, SaveSale)으로 주문을 자동 등록한다.
-//  실제 서비스에서는 이카운트 OAPI(SaveSale)를 호출 — lf_ecount_key 가 있으면 실 API,
-//  없으면 데모 시뮬레이션으로 전표번호를 생성한다.
+//  실제 서비스에서는 이카운트 OAPI(SaveSale)를 호출 — lf_ecount_key 가 있으면 실 API.
+
+let _ecountSeq = 0;  // 동일 시각 다건 전송 시 전표번호 충돌 방지용 시퀀스
+
+// 판매전표번호 발번 (EC-YYYYMMDD-XXXXX)
+function nextVoucherNo() {
+  const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const seq = String((Date.now() + (++_ecountSeq)) % 100000).padStart(5, '0');
+  return 'EC-' + ymd + '-' + seq;
+}
+
+// 단일 주문을 이카운트 판매입력으로 등록(핵심 로직, 동기) — 저장/렌더는 호출측에서
+function _ecountRegister(o) {
+  const supply = o.supplyAmt ?? Math.round((o.totalAmt || 0) - (o.totalAmt || 0) / 11);
+  const vat    = o.vatAmt    ?? Math.round((o.totalAmt || 0) / 11);
+  const payload = {
+    method:    'SaveSale',                   // 이카운트 판매입력 API
+    custName:  o.userName,
+    custEmail: o.userEmail,
+    orderNo:   o.no,
+    items:     o.items.map(it => ({ prodCode: it.sku, prodName: it.name, qty: it.qty, price: it.unitPrice, amount: it.subtotal })),
+    supplyAmt: supply, vatAmt: vat, totalAmt: o.finalAmt,
+  };
+  const apiKey = localStorage.getItem('lf_ecount_key'); // 실 연동 키(있으면 실제 호출 자리)
+  o.ecountVoucherNo = nextVoucherNo();
+  o.ecountSentAt    = new Date().toLocaleString('ko-KR');
+  o.ecount          = '전송완료';
+  o._ecountSending  = false;
+  console.log('[이카운트] 판매입력 등록' + (apiKey ? ' (실 API)' : ' (시뮬레이션)'), payload, '→ 전표', o.ecountVoucherNo);
+  return o.ecountVoucherNo;
+}
+
+// 단건 전송 — 주문 상세에서 「이카운트로 전송」 클릭
 function sendToEcount(orderId) {
   const o = ORDERS.find(x => x.id === orderId);
   if (!o) return;
@@ -7068,44 +7122,94 @@ function sendToEcount(orderId) {
   if (o.status === '취소')     { toast('취소된 주문은 이카운트로 전송할 수 없습니다'); return; }
   if (o._ecountSending) return;   // 중복 전송 방지
   o._ecountSending = true;
-
-  // 전송 중 표시
   const statusEl = document.getElementById('odm-ecount-status');
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--muted)"><i class="ti ti-loader-2" aria-hidden="true"></i> 이카운트 전송 중...</span>';
-
-  // 이카운트 판매전표 payload 구성 (매출)
-  const supply = o.supplyAmt ?? Math.round((o.totalAmt || 0) - (o.totalAmt || 0) / 11);
-  const vat    = o.vatAmt    ?? Math.round((o.totalAmt || 0) / 11);
-  const payload = {
-    method:      'SaveSale',                 // 이카운트 판매입력 API
-    custName:    o.userName,
-    custEmail:   o.userEmail,
-    orderNo:     o.no,
-    items:       o.items.map(it => ({ prodCode: it.sku, prodName: it.name, qty: it.qty, price: it.unitPrice, amount: it.subtotal })),
-    supplyAmt:   supply,
-    vatAmt:      vat,
-    totalAmt:    o.finalAmt,
-  };
-  const apiKey = localStorage.getItem('lf_ecount_key'); // 실 연동 키(있으면 실제 호출)
-
-  // 데모: API 호출 시뮬레이션 (실제는 fetch(이카운트 OAPI))
-  setTimeout(() => {
-    o._ecountSending = false;
-    // 판매전표 번호 생성 (EC-YYYYMMDD-XXXXX)
-    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    o.ecountVoucherNo = 'EC-' + ymd + '-' + String(Date.now()).slice(-5);
-    o.ecountSentAt    = new Date().toLocaleString('ko-KR');
-    o.ecount          = '전송완료';
-    saveOrders();                              // localStorage 영속화
-    if (currentOrderId === orderId) openOrderDetail(orderId); // 모달 갱신
-    renderOrderTable();                        // 목록 갱신
-    console.log('[이카운트] 판매입력 자동 등록' + (apiKey ? ' (실 API)' : ' (시뮬레이션)'), payload, '→ 전표', o.ecountVoucherNo);
+  setTimeout(() => {   // API 호출 시뮬레이션
+    _ecountRegister(o);
+    saveOrders();
+    if (currentOrderId === orderId) openOrderDetail(orderId);
+    renderOrderTable();
+    renderEcountSchedule();
     toast(`${o.no} 이카운트 판매 등록 완료 · 전표 ${o.ecountVoucherNo}`);
   }, 900);
 }
 
-// 기존 호출부 호환 — 재전송도 동일 로직 사용
+// 기존 호출부 호환 — 재전송도 동일 로직
 function retryEcount(orderId) { sendToEcount(orderId); }
+
+/* ── 이카운트 자동 전송 스케줄 (매일 오후 2시) — 2026-06-11 ──────────
+   "2시까지 등록된 주문을 자동으로 이카운트에 등록".
+   ⚠️ 정적 클라이언트 앱 한계 — 관리자 화면이 열려 있는 동안에만 동작.
+   완전 무인(브라우저 닫힘 시) 스케줄은 백엔드 연동 필요. 2시 이후 접속 시 당일분 캐치업. */
+const ECOUNT_AUTOSEND_HOUR = 14;  // 오후 2시
+
+function ecountScheduleEnabled() { return localStorage.getItem('lf_ecount_autosend') !== '0'; } // 기본 ON
+function ecountLastRun()         { return localStorage.getItem('lf_ecount_autosend_lastrun') || ''; }
+function ecountTodayKey()        { return new Date().toISOString().slice(0, 10); }
+function ecountCutoffTs() { const d = new Date(); d.setHours(ECOUNT_AUTOSEND_HOUR, 0, 0, 0); return d.getTime(); }
+
+// 전송대기 주문 일괄 전송. opts.cutoffTs 지정 시 그 시각까지 등록분만(2시 기준), 없으면 전체.
+function autoSendEcountBatch(opts) {
+  opts = opts || {};
+  const cutoff = (opts.cutoffTs != null) ? opts.cutoffTs : Infinity;
+  const pending = ORDERS.filter(o =>
+    o.ecount === '전송대기' && o.status !== '취소' &&
+    (cutoff === Infinity || !o.orderedTs || o.orderedTs <= cutoff)
+  );
+  if (!pending.length) {
+    if (!opts.silent) toast('전송할 전송대기 주문이 없습니다');
+    renderEcountSchedule();
+    return 0;
+  }
+  pending.forEach(o => _ecountRegister(o));
+  saveOrders();
+  renderOrderTable();
+  if (currentOrderId) { const c = ORDERS.find(x => x.id === currentOrderId); if (c) openOrderDetail(currentOrderId); }
+  renderEcountSchedule();
+  toast(`${opts.auto ? '[자동] ' : ''}이카운트 일괄 전송 완료 · ${pending.length}건`);
+  console.log('[이카운트] 일괄 전송', pending.length, '건', opts.auto ? '(자동 오후 2시)' : '(수동)');
+  return pending.length;
+}
+
+// 자동 전송 ON/OFF 토글
+function toggleEcountAutoSend(checked) {
+  localStorage.setItem('lf_ecount_autosend', checked ? '1' : '0');
+  renderEcountSchedule();
+  toast(checked ? '매일 오후 2시 자동 전송 켜짐' : '자동 전송 꺼짐');
+}
+
+// 스케줄 상태 카드 렌더
+function renderEcountSchedule() {
+  const toggle = document.getElementById('ecount-autosend-toggle');
+  if (toggle) toggle.checked = ecountScheduleEnabled();
+  const info = document.getElementById('ecount-schedule-info');
+  if (!info) return;
+  const pendingCnt = ORDERS.filter(o => o.ecount === '전송대기' && o.status !== '취소').length;
+  const last = ecountLastRun();
+  const cutoffPassed = Date.now() >= ecountCutoffTs();
+  let nextRun;
+  if (!ecountScheduleEnabled()) nextRun = '— (비활성)';
+  else if (cutoffPassed && last === ecountTodayKey()) nextRun = '내일 오후 2:00';
+  else if (cutoffPassed) nextRun = '오늘 오후 2:00 (지난 시각 — 곧 캐치업 전송)';
+  else nextRun = '오늘 오후 2:00';
+  info.innerHTML =
+    `<div>· 다음 자동 전송: <strong style="color:var(--c)">${nextRun}</strong></div>` +
+    `<div>· 마지막 자동 전송일: <strong style="color:var(--c)">${last || '없음'}</strong></div>` +
+    `<div>· 현재 전송대기 주문: <strong style="color:${pendingCnt ? 'var(--amber)' : 'var(--green)'}">${pendingCnt}건</strong></div>`;
+}
+
+// 1분 주기 스케줄 체크 — 관리자 세션 + 활성 + 오후2시 경과 + 오늘 미실행 시 일괄 전송
+function ecountAutoSchedulerTick() {
+  if (!ecountScheduleEnabled()) return;
+  if (typeof role !== 'undefined' && role !== 'admin') return;  // 관리자 화면에서만
+  if (Date.now() < ecountCutoffTs()) return;                    // 오후 2시 이전
+  if (ecountLastRun() === ecountTodayKey()) return;             // 오늘 이미 실행
+  localStorage.setItem('lf_ecount_autosend_lastrun', ecountTodayKey());  // 재실행 방지(0건이어도)
+  autoSendEcountBatch({ cutoffTs: ecountCutoffTs(), auto: true, silent: false });
+}
+
+// 스케줄러 가동 (1분 주기) — 앱 로드 시 1회 등록
+setInterval(ecountAutoSchedulerTick, 60 * 1000);
 
 // aNav orders 케이스에서 renderOrderTable 호출
 
@@ -7453,7 +7557,7 @@ function submitOrder() {
       tier: role, items: orderItems,
       totalAmt: total, shipCost: ship, finalAmt: final,
       status: '결제완료', ecount: '전송대기',
-      orderedAt: new Date().toLocaleString('ko-KR'),
+      orderedAt: new Date().toLocaleString('ko-KR'), orderedTs: Date.now(),
       trackingNo: '', courier: '',
     });
 
@@ -9523,7 +9627,7 @@ async function submitOrderWithToss() {
       totalAmt: total, supplyAmt: supply, vatAmt: vat,  // 공급가 / 부가세 분리 (B2B 회계)
       shipCost: ship, finalAmt: final,
       status: '결제완료', ecount: '전송대기',
-      orderedAt: new Date().toLocaleString('ko-KR'),
+      orderedAt: new Date().toLocaleString('ko-KR'), orderedTs: Date.now(),
       trackingNo: '', courier: '',
       taxInvoiceRequested: false,  // 세금계산서 신청 여부 (B2B)
     });
