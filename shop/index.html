@@ -1844,14 +1844,19 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
       <!-- 카테고리 관리 -->
       <div class="a-page" id="ap-categories">
         <div class="a-title">카테고리 관리</div>
-        <div class="a-sub">카테고리를 추가·수정·삭제합니다. 상품이 연결된 카테고리는 삭제 전 이동이 필요합니다.</div>
+        <div class="a-sub">카테고리를 추가·수정·삭제합니다. <strong>편집 내용은 임시 반영되며, 우측 상단 「저장」을 눌러야 실제 쇼핑몰에 적용됩니다.</strong> 상품이 연결된 카테고리는 삭제 전 이동이 필요합니다.</div>
         <div class="cat-stats" id="cat-stats"></div>
         <div class="a-card">
           <div class="a-card-head">
             <div class="a-card-title"><i class="ti ti-sitemap" aria-hidden="true"></i>카테고리 트리</div>
-            <div style="display:flex;gap:6px">
+            <div style="display:flex;gap:6px;align-items:center" id="cat-save-bar">
+              <span id="cat-dirty-indicator" style="display:none;align-items:center;gap:4px;font-size:11.5px;color:var(--amber);margin-right:2px">
+                <i class="ti ti-alert-circle" style="font-size:12px" aria-hidden="true"></i>저장되지 않은 변경
+              </span>
               <button class="abtn" onclick="catExpandAll(true)"><i class="ti ti-chevrons-down" style="font-size:11px" aria-hidden="true"></i> 모두 펼치기</button>
               <button class="abtn" onclick="catExpandAll(false)"><i class="ti ti-chevrons-up" style="font-size:11px" aria-hidden="true"></i> 모두 접기</button>
+              <button class="abtn" id="cat-discard-btn" onclick="discardCatChanges()" disabled><i class="ti ti-arrow-back-up" style="font-size:11px" aria-hidden="true"></i> 되돌리기</button>
+              <button class="abtn primary" id="cat-save-btn" onclick="saveCatChanges()" disabled><i class="ti ti-device-floppy" style="font-size:11px" aria-hidden="true"></i> 저장</button>
             </div>
           </div>
           <div style="padding:0">
@@ -2648,18 +2653,21 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
         로그인 상태 유지 (7일간)
       </label>
       <button class="jbtn dark" style="width:100%;margin-top:8px" onclick="submitLogin()">로그인</button>
-      <!-- 데모 환경에서만 노출되는 자동입력 (운영 배포 시 이 블록 삭제 권장) -->
+      <!-- 데모/테스트 계정 자동입력 (운영 배포 시 이 블록 삭제 권장) — 2026-06-11 역할별 계정 반영 -->
       <div id="demo-login-helper" style="background:var(--bg);border-radius:var(--r2);padding:9px 12px;margin-top:10px;font-size:11.5px;color:var(--muted);display:none">
-        <div style="font-weight:500;margin-bottom:4px;color:var(--c)">데모 환경 (localhost)</div>
-        <div>테스트 계정으로 자동 입력</div>
-        <button onclick="document.getElementById('login-email').value='test@test.com';document.getElementById('login-pw').value='12345678'"
-          style="margin-top:6px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surf);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">
-          자동 입력
-        </button>
+        <div style="font-weight:500;margin-bottom:4px;color:var(--c)">테스트 계정 (아이디=비밀번호)</div>
+        <div style="margin-bottom:6px">버튼을 누르면 자동 입력됩니다</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" onclick="fillDemoLogin('5')" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surf);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">소비자 5</button>
+          <button type="button" onclick="fillDemoLogin('4')" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surf);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">사업자 T1 · 4</button>
+          <button type="button" onclick="fillDemoLogin('3')" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surf);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">사업자 T2 · 3</button>
+          <button type="button" onclick="fillDemoLogin('2')" style="padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surf);font-size:11px;cursor:pointer;font-family:'Noto Sans KR',sans-serif">사업자 T3 · 2</button>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--hint)">관리자: 로고 더블클릭 → 아이디 <strong>1</strong> / 비밀번호 <strong>1</strong></div>
       </div>
       <script>
-        // localhost에서만 데모 자동입력 헬퍼 노출
-        if (['localhost','127.0.0.1',''].includes(location.hostname)) {
+        // localhost 또는 github.io 데모 환경에서 테스트 계정 헬퍼 노출 (운영 도메인에서는 숨김)
+        if (['localhost','127.0.0.1',''].includes(location.hostname) || /\.github\.io$/.test(location.hostname)) {
           var _dh = document.getElementById('demo-login-helper');
           if (_dh) _dh.style.display = 'block';
         }
@@ -2859,12 +2867,14 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
       <!-- 결제 수단 -->
       <div class="co-section">
         <div class="co-section-title"><i class="ti ti-credit-card" style="font-size:13px" aria-hidden="true"></i>결제 수단</div>
-        <select id="co-pay-method" style="padding:9px 11px;border:1px solid var(--border);border-radius:var(--r2);font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--surf);color:var(--c)">
-          <option>신용카드 / 체크카드</option>
-          <option>카카오페이</option>
-          <option>토스페이</option>
-          <option>무통장 입금</option>
+        <!-- 2026-06-11 결제수단 개인/사업자 구분 — 옵션은 openCheckout()에서 role 기준 동적 생성 -->
+        <select id="co-pay-method" onchange="onPayMethodChange()" style="padding:9px 11px;border:1px solid var(--border);border-radius:var(--r2);font-size:13px;font-family:'Noto Sans KR',sans-serif;background:var(--surf);color:var(--c)">
+          <!-- 동적 생성: 개인=카드결제/은행이체, 사업자=카드결제/은행결제 -->
         </select>
+        <div id="co-bank-guide" style="display:none;margin-top:7px;padding:8px 11px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);font-size:11.5px;color:var(--muted);line-height:1.5">
+          <i class="ti ti-info-circle" style="font-size:12px" aria-hidden="true"></i>
+          <span id="co-bank-guide-txt">주문 완료 후 안내되는 계좌로 입금해 주세요. 입금 확인 후 배송이 시작됩니다.</span>
+        </div>
       </div>
 
       <!-- 세금계산서 신청 (사업자 전용, 2026-05-25 추가) -->
@@ -2877,6 +2887,20 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
           <span><strong>세금계산서 신청</strong> <span style="font-size:11.5px;color:var(--muted)">— 공급가/부가세 분리 발행 (관리자 확인 후 발행 완료)</span></span>
         </label>
         <div id="co-tax-form" style="display:none;margin-top:8px;padding:12px;background:var(--bg);border-radius:var(--r2);border:1px solid var(--border);flex-direction:column;gap:8px">
+          <!-- 2026-06-11 발행 대상 선택: 등록된 사업자 정보 vs 제3자(다른 업체) -->
+          <div style="display:flex;flex-direction:column;gap:6px;padding-bottom:8px;border-bottom:1px dashed var(--border)">
+            <div style="font-size:11px;color:var(--muted)">세금계산서 발행 대상</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px">
+                <input type="radio" name="co-tax-target" value="self" checked onchange="setCoTaxTarget('self')" style="cursor:pointer">
+                <span>등록된 사업자 정보 <span style="font-size:11px;color:var(--muted)">(내 회사)</span></span>
+              </label>
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12.5px">
+                <input type="radio" name="co-tax-target" value="third" onchange="setCoTaxTarget('third')" style="cursor:pointer">
+                <span>제3자 <span style="font-size:11px;color:var(--muted)">(다른 업체로 발행)</span></span>
+              </label>
+            </div>
+          </div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:-2px">공급받는자 정보 (마이페이지에서 기본값 등록 가능)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
@@ -2912,7 +2936,7 @@ button{cursor:pointer;font-family:'Noto Sans KR',sans-serif;border:none;backgrou
               <input id="co-tax-bizitem" placeholder="인테리어 시공" style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;font-family:'Noto Sans KR',sans-serif">
             </div>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer">
+          <label id="co-tax-save-row" style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer">
             <input type="checkbox" id="co-tax-save" checked style="cursor:pointer">
             이 정보를 회사 정보로 저장 (다음 주문 시 자동 채움)
           </label>
@@ -4739,6 +4763,61 @@ let catEditingId = null;
 let catDeleteTarget = null;
 let catIdCounter = 1000;
 
+/* ── 2026-06-11 카테고리 변경 드래프트(임시) 모델 ─────────────────────
+   편집(이름수정·하위추가·대분류추가·순서이동·삭제)은 작업본 catData 에만
+   임시 반영하고, 관리자가 「저장」을 눌렀을 때만 라이브 스토어(CATS)와
+   localStorage 에 일괄 적용한다. 「되돌리기」는 마지막 저장 시점으로 복원.
+   ─────────────────────────────────────────────────────────────────── */
+let catDirty = false;     // 저장되지 않은 변경 존재 여부
+let catBaseline = null;   // 마지막 저장(또는 최초 로드) 시점의 catData 스냅샷
+
+function cloneCats(arr) { return JSON.parse(JSON.stringify(arr)); }
+
+// 작업본 변경 표시 — 라이브 반영/저장은 하지 않음
+function markCatDirty() { catDirty = true; updateCatSaveBar(); }
+
+// 저장/되돌리기 바 상태 갱신 (버튼 활성화 + 미저장 표시)
+function updateCatSaveBar() {
+  const ind        = document.getElementById('cat-dirty-indicator');
+  const saveBtn    = document.getElementById('cat-save-btn');
+  const discardBtn = document.getElementById('cat-discard-btn');
+  if (ind)        ind.style.display = catDirty ? 'inline-flex' : 'none';
+  if (saveBtn)    saveBtn.disabled    = !catDirty;
+  if (discardBtn) discardBtn.disabled = !catDirty;
+}
+
+// 「저장」 — 라이브 스토어·localStorage 에 일괄 반영
+function saveCatChanges() {
+  if (!catDirty) { toast('저장할 변경사항이 없습니다'); return; }
+  syncCatsFromCatData();                 // catData → CATS 변환
+  renderSidebar(); renderMCats(); initRegCatSelect();  // 쇼핑몰·상품등록 드롭다운 갱신
+  saveCats();                            // localStorage 영속화
+  catBaseline = cloneCats(catData);      // 저장 시점을 새 기준으로
+  catDirty = false;
+  updateCatSaveBar();
+  toast('카테고리 변경사항이 저장됐습니다');
+}
+
+// 「되돌리기」 — 마지막 저장 시점으로 작업본 복원
+function discardCatChanges() {
+  if (!catDirty) return;
+  if (catBaseline) {
+    const restored = cloneCats(catBaseline);
+    catData.length = 0;
+    restored.forEach(n => catData.push(n));
+  }
+  catDirty = false;
+  catEditingId = null;
+  catAddingChildId = null;
+  renderCatTree();
+  toast('변경사항을 되돌렸습니다 (마지막 저장 상태로 복원)');
+}
+
+// 미저장 상태에서 새로고침/창닫기 시 경고 (드래프트는 메모리에만 존재)
+window.addEventListener('beforeunload', (e) => {
+  if (catDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
 /* ── 통계 렌더 ── */
 function renderCatStats() {
   function countAll(nodes) {
@@ -4765,9 +4844,11 @@ function countProds(node) {
 
 /* ── 트리 렌더 ── */
 function renderCatTree() {
+  if (catBaseline === null) catBaseline = cloneCats(catData);  // 최초 진입 = 저장 기준 스냅샷
   renderCatStats();
   const tree = document.getElementById('cat-tree');
   tree.innerHTML = catData.map((n, i) => renderCatNode(n, 0, i)).join('');
+  updateCatSaveBar();
 }
 
 function renderCatNode(node, depth, index) {
@@ -4867,10 +4948,11 @@ function saveEdit(id) {
   const val = inp.value.trim();
   if (val) {
     const node = findCatNode(catData, id);
-    if (node) node.name = val;
-    syncCatsFromCatData();renderSidebar();renderMCats();initRegCatSelect();
-  saveCats(); // 카테고리 이름 수정 → localStorage 저장
-  toast('카테고리 이름이 수정됐습니다');
+    if (node && node.name !== val) {
+      node.name = val;
+      markCatDirty();  // 임시 반영 — 저장 시 실제 적용
+      toast('이름이 임시 수정됐습니다 — 「저장」을 눌러 적용하세요');
+    }
   }
   catEditingId = null;
   renderCatTree();
@@ -4913,9 +4995,8 @@ function addChildCat(parentId) {
   parent.children.push({ id: newId, name, icon: 'ti-tag', open: false, prodCount: 0, children: [] });
   parent.open = true;
   catAddingChildId = null;
-  syncCatsFromCatData();renderSidebar();renderMCats();initRegCatSelect();
-  saveCats(); // 하위 카테고리 추가 → localStorage 저장
-  toast(`"${name}" 카테고리가 추가됐습니다`);
+  markCatDirty();  // 임시 반영 — 저장 시 실제 적용
+  toast(`"${name}" 하위 카테고리 추가됨 — 「저장」을 눌러 적용하세요`);
   renderCatTree();
 }
 
@@ -4927,10 +5008,9 @@ function addRootCat() {
   const newId = 'cat-' + (++catIdCounter);
   catData.push({ id: newId, name, icon: 'ti-tag', open: false, prodCount: 0, children: [] });
   inp.value = '';
+  markCatDirty();  // 임시 반영 — 저장 시 실제 적용
   renderCatTree();
-  syncCatsFromCatData();renderSidebar();renderMCats();initRegCatSelect();
-  saveCats(); // 대분류 추가 → localStorage 저장
-  toast(`"${name}" 대분류 추가됨 — + 버튼으로 하위 카테고리를 추가하세요`);
+  toast(`"${name}" 대분류 임시 추가됨 — + 버튼으로 하위 추가 후 「저장」을 눌러 적용하세요`);
   // 새로 추가된 항목 하이라이트
   setTimeout(() => {
     const newRow = document.getElementById('catrow-' + newId);
@@ -4957,9 +5037,8 @@ function moveCat(id, dir) {
     return nodes.some(n => searchMove(n.children));
   }
   searchMove(catData);
-  syncCatsFromCatData();renderSidebar();renderMCats();initRegCatSelect();
-  saveCats(); // 카테고리 순서 변경 → localStorage 저장
-  toast('순서가 변경됐습니다');
+  markCatDirty();  // 임시 반영 — 저장 시 실제 적용
+  toast('순서가 임시 변경됨 — 「저장」을 눌러 적용하세요');
   renderCatTree();
 }
 
@@ -4982,9 +5061,8 @@ function doDeleteCat(id, name) {
   }
   removeNode(catData);
   document.getElementById('cat-confirm-ov').classList.remove('show');
-  syncCatsFromCatData();renderSidebar();renderMCats();initRegCatSelect();
-  saveCats(); // 카테고리 삭제 → localStorage 저장
-  toast(`"${name}" 카테고리가 삭제됐습니다`);
+  markCatDirty();  // 임시 반영 — 저장 시 실제 적용
+  toast(`"${name}" 카테고리 임시 삭제됨 — 「저장」을 눌러 적용하세요`);
   renderCatTree();
 }
 
@@ -5636,11 +5714,12 @@ const IS_LOCAL = ['localhost', '127.0.0.1', ''].includes(location.hostname);
 const _DEV_BYPASS_OK = DEV_MODE && IS_LOCAL;
 
 // 관리자 자격증명 — 해시 저장 (salt: lf_admin_salt_v1)
-// 기본 비밀번호: 12345678 (배포 전 반드시 변경하세요. changeAdminPassword('새비번') 호출)
+// 2026-06-11 데모/QA용 테스트 자격증명으로 변경 — 아이디 1 / 비밀번호 1
+// ⚠️ Public 데모 전용. 실서비스 전 반드시 changeAdminPassword('강력한새비번') 로 교체하세요.
 const ADMIN_CREDENTIALS = [
   {
-    id: 'junil98@gmail.com',
-    pwHash: '3e15992316f07debec765abade90122ad3bf1e874c8321962a2bb9360d541ea6',
+    id: '1',
+    pwHash: 'd1f9dfe7550351b2eccfe9752604598d3b090240136ae157b80fcc49fc038c32', // SHA-256('1' + salt)
     salt: 'lf_admin_salt_v1',
     name: '라이트팩토리 관리자'
   }
@@ -6520,13 +6599,33 @@ function openProdPreview(prodId) {
    - 평문 PW가 localStorage에 남아있던 사용자는 앱 시작 시 자동 마이그레이션
    - 실제 서비스에서는 서버 API + bcrypt/argon2 로 이관 필요
    ═══════════════════════════════════════════════════════════ */
-const USERS = [
-  // 미리 만들어둔 테스트 계정 — 평문 12345678 의 SHA-256(pw + 'lf_user_salt_v1') 해시
-  { id:'u_test', name:'테스트회원', email:'test@test.com',
-    pwHash:'417b984f36ec6cc636ab99a9d2588e72ffcc21d2d16474ad1d39227fa2875e5b',
-    salt:'lf_user_salt_v1',
-    role:'consumer', tier:'consumer' },
+// ─── 역할별 테스트 계정 시드 (2026-06-11) ───────────────────────────
+// 데모/QA용. 로그인 아이디 = 비밀번호 (예: 소비자 5/5). 비번은 SHA-256(pw + salt).
+// 사업자(T1~T3)는 승인 완료 상태(tier 지정)이므로 로그인 즉시 도매가가 적용됩니다.
+// ⚠️ Public 데모 전용 자격증명 — 실서비스 전 반드시 교체하세요.
+//   소비자 5/5 · T1 4/4 · T2 3/3 · T3 2/2 · (관리자 1/1 은 로고 더블클릭→관리자 로그인)
+const SEED_USERS = [
+  { id:'u_seed_consumer', name:'테스트 소비자', email:'5',
+    pwHash:'771b0e9c9daf2dcea1b766b5a55070e1a00ca37abdc349b83f14e4e2b21f564d',
+    salt:'lf_user_salt_v1', role:'consumer', tier:'consumer' },
+  { id:'u_seed_t1', name:'테스트 사업자 T1', email:'4',
+    pwHash:'97a2b70b331dc91bf4c3b27f1d8a419bd7471b370aeaea1b17efe816ef572d9e',
+    salt:'lf_user_salt_v1', role:'business', tier:'T1',
+    bizInfo:{ bizName:'(주)테스트시공 T1', bno:'401-81-00004', ceo:'김시공', taxEmail:'t1@test.com',
+              addr:'서울특별시 강남구 테스트로 4', bizType:'건설업', bizItem:'전기·소방 시공' } },
+  { id:'u_seed_t2', name:'테스트 사업자 T2', email:'3',
+    pwHash:'43f904d07577be5ea1e91212d3c093668418e421ca83044f58464dfe7fa10dc4',
+    salt:'lf_user_salt_v1', role:'business', tier:'T2',
+    bizInfo:{ bizName:'(주)테스트유통 T2', bno:'301-81-00003', ceo:'이유통', taxEmail:'t2@test.com',
+              addr:'서울특별시 마포구 테스트로 3', bizType:'도소매업', bizItem:'조명·전기자재' } },
+  { id:'u_seed_t3', name:'테스트 사업자 T3', email:'2',
+    pwHash:'b870b7e4b50f41e9d661691728840ce3f6332b282820409a18c67c7910077dca',
+    salt:'lf_user_salt_v1', role:'business', tier:'T3',
+    bizInfo:{ bizName:'(주)테스트상사 T3', bno:'201-81-00002', ceo:'박상사', taxEmail:'t3@test.com',
+              addr:'서울특별시 송파구 테스트로 2', bizType:'도소매업', bizItem:'조명기구' } },
 ];
+// 런타임 배열 — SEED_USERS 깊은 복사로 시작 (회원가입 시 USERS.push 로 누적)
+const USERS = SEED_USERS.map(u => ({ ...u, ...(u.bizInfo ? { bizInfo: { ...u.bizInfo } } : {}) }));
 
 let currentUser = null;  // 현재 로그인된 유저 객체
 
@@ -6974,28 +7073,36 @@ function openCheckout() {
   if (nameEl  && !nameEl.value)  nameEl.value  = currentUser.name  || '';
   if (emailEl && !emailEl.value) emailEl.value = currentUser.email || '';
 
-  // 세금계산서 섹션 — 사업자(T1/T2/T3)만 노출 (2026-05-25 추가)
+  // ── 결제수단 동적 생성 — 개인/사업자 구분 (2026-06-11) ──
+  //  · 개인(소비자·대기·관리자): 카드결제 / 은행이체
+  //  · 사업자(T1·T2·T3):        카드결제 / 은행결제
+  const isBizUser = ['t1','t2','t3'].includes(role);
+  const paySel = document.getElementById('co-pay-method');
+  if (paySel) {
+    const methods = isBizUser ? ['카드결제', '은행결제'] : ['카드결제', '은행이체'];
+    paySel.innerHTML = methods.map(m => `<option>${m}</option>`).join('');
+  }
+
+  // ── 세금계산서 섹션 — 사업자 + '은행결제' 선택 시에만 노출 (2026-06-11 개정) ──
+  //  카드결제는 카드매출전표가 증빙이므로 세금계산서 신청 대상에서 제외.
+  //  실제 표시 토글은 onPayMethodChange()가 결제수단 값에 따라 처리한다.
   const taxSec = document.getElementById('co-tax-section');
   if (taxSec) {
-    const showTax = ['t1','t2','t3'].includes(role);
-    taxSec.style.display = showTax ? '' : 'none';
-    if (showTax) {
-      // 마이페이지에 저장된 회사 정보로 폼 미리 채움 (수정 가능)
-      const b = currentUser.bizInfo || {};
-      document.getElementById('co-tax-name').value    = b.bizName || '';
-      document.getElementById('co-tax-bno').value     = b.bno     || '';
-      document.getElementById('co-tax-ceo').value     = b.ceo     || currentUser.name || '';
-      document.getElementById('co-tax-email').value   = b.taxEmail|| currentUser.email || '';
-      document.getElementById('co-tax-addr').value    = b.addr    || '';
-      document.getElementById('co-tax-biztype').value = b.bizType || '';
-      document.getElementById('co-tax-bizitem').value = b.bizItem || b.ind || '';
-      // 체크박스/폼 상태 초기화
+    if (isBizUser) {
+      // 신청 체크/폼 초기화 후, 발행 대상을 '본인(등록 사업자 정보)'으로 세팅
       const chk = document.getElementById('co-tax-req');
       if (chk) chk.checked = false;
       const form = document.getElementById('co-tax-form');
       if (form) form.style.display = 'none';
+      const selfRadio = document.querySelector('input[name="co-tax-target"][value="self"]');
+      if (selfRadio) selfRadio.checked = true;
+      setCoTaxTarget('self');  // 등록된 사업자 정보로 폼 채움 + 사업자번호 잠금
+    } else {
+      taxSec.style.display = 'none';
     }
   }
+  // 결제수단 기준으로 입금안내·세금계산서 노출 동기화
+  onPayMethodChange();
 
   // 주문 요약 렌더
   renderCheckoutSummary();
@@ -7016,6 +7123,85 @@ function openCheckout() {
 function toggleCoTaxForm(checked) {
   const form = document.getElementById('co-tax-form');
   if (form) form.style.display = checked ? 'flex' : 'none';
+}
+
+// 2026-06-11 결제수단 변경 핸들러
+//  · 은행이체(개인)/은행결제(사업자) → 입금 안내 노출
+//  · 사업자 + 은행결제 → 세금계산서 신청 섹션 노출 (카드결제 시 숨김)
+function onPayMethodChange() {
+  const paySel = document.getElementById('co-pay-method');
+  const method = paySel ? paySel.value : '';
+  const isBizUser = ['t1','t2','t3'].includes(role);
+  const isBank = (method === '은행결제' || method === '은행이체');
+
+  // 입금 안내 문구
+  const guide = document.getElementById('co-bank-guide');
+  if (guide) {
+    guide.style.display = isBank ? 'block' : 'none';
+    const txt = document.getElementById('co-bank-guide-txt');
+    if (txt) {
+      txt.textContent = isBizUser
+        ? '주문 완료 후 안내되는 계좌로 입금해 주세요. 입금 확인 후 배송이 시작되며, 세금계산서를 신청하실 수 있습니다.'
+        : '주문 완료 후 안내되는 계좌로 입금해 주세요. 입금 확인 후 배송이 시작됩니다.';
+    }
+  }
+
+  // 세금계산서 섹션: 사업자 + 은행결제일 때만 노출
+  const taxSec = document.getElementById('co-tax-section');
+  if (taxSec) {
+    const showTax = isBizUser && method === '은행결제';
+    taxSec.style.display = showTax ? '' : 'none';
+    if (!showTax) {
+      // 숨길 때는 신청 체크 해제(의도치 않은 신청 방지)
+      const chk = document.getElementById('co-tax-req');
+      if (chk && chk.checked) { chk.checked = false; toggleCoTaxForm(false); }
+    }
+  }
+}
+
+// 2026-06-11 세금계산서 발행 대상 전환
+//  · 'self'  : 등록된 사업자 정보(내 회사)로 채우고 사업자번호 잠금
+//  · 'third' : 제3자(다른 업체) — 전 필드 비우고 직접 입력(사업자번호 잠금 해제)
+function setCoTaxTarget(target) {
+  const bnoEl   = document.getElementById('co-tax-bno');
+  const nameEl  = document.getElementById('co-tax-name');
+  const ceoEl   = document.getElementById('co-tax-ceo');
+  const emailEl = document.getElementById('co-tax-email');
+  const addrEl  = document.getElementById('co-tax-addr');
+  const typeEl  = document.getElementById('co-tax-biztype');
+  const itemEl  = document.getElementById('co-tax-bizitem');
+  const saveRow = document.getElementById('co-tax-save-row');
+  const saveChk = document.getElementById('co-tax-save');
+  if (!bnoEl) return;
+
+  if (target === 'third') {
+    // 제3자 — 모든 필드 비우고 직접 입력 가능
+    [nameEl, ceoEl, emailEl, addrEl, typeEl, itemEl].forEach(el => { if (el) el.value = ''; });
+    bnoEl.value = '';
+    bnoEl.readOnly = false;
+    bnoEl.style.background = 'var(--surf)';
+    bnoEl.style.color = 'var(--c)';
+    bnoEl.placeholder = '000-00-00000 (발행 대상 업체)';
+    // 제3자 정보는 내 회사 정보로 저장하지 않음
+    if (saveRow) saveRow.style.display = 'none';
+    if (saveChk) saveChk.checked = false;
+  } else {
+    // 본인(등록된 사업자 정보)로 채움 + 사업자번호 잠금
+    const b = (currentUser && currentUser.bizInfo) || {};
+    if (nameEl)  nameEl.value  = b.bizName || '';
+    if (bnoEl)   bnoEl.value   = b.bno     || '';
+    if (ceoEl)   ceoEl.value   = b.ceo     || (currentUser && currentUser.name)  || '';
+    if (emailEl) emailEl.value = b.taxEmail|| (currentUser && currentUser.email) || '';
+    if (addrEl)  addrEl.value  = b.addr    || '';
+    if (typeEl)  typeEl.value  = b.bizType || '';
+    if (itemEl)  itemEl.value  = b.bizItem || b.ind || '';
+    bnoEl.readOnly = true;
+    bnoEl.style.background = '#F5F5F5';
+    bnoEl.style.color = 'var(--muted)';
+    bnoEl.placeholder = '000-00-00000';
+    if (saveRow) saveRow.style.display = 'flex';
+    if (saveChk) saveChk.checked = true;
+  }
 }
 
 function closeCheckout() {
@@ -7594,6 +7780,24 @@ function renderMyOrders() {
     if (rma) {
       rmaBadge = `<span class="badge" style="color:${RMA_STATUS_COLOR[rma.status]};background:transparent;border:1px solid currentColor;margin-left:6px">${RMA_TYPE_LABEL[rma.type]} ${RMA_STATUS_LABEL[rma.status]}</span>`;
     }
+    // ── 세금계산서 발행 정보 (2026-06-11) — 구매 내역에서 발행 상태/대상 확인 ──
+    let taxRow = '';
+    const inv = o.taxInvoiceId ? TAX_INVOICES.find(t => t.id === o.taxInvoiceId) : null;
+    if (inv && inv.status !== 'canceled') {
+      const tLabel = { requested:'발행 대기', issued:'발행 완료' }[inv.status] || inv.status;
+      const tColor = inv.status === 'issued' ? 'var(--green)' : 'var(--amber)';
+      const rcptName = inv.recipient?.bizName || inv.recipient?.name || '';
+      const thirdTag = inv.recipient?.thirdParty
+        ? ' <span style="font-size:11px;color:var(--muted)">(제3자)</span>' : '';
+      taxRow = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;flex-wrap:wrap">
+        <span style="color:var(--muted)"><i class="ti ti-file-invoice" style="font-size:12px" aria-hidden="true"></i> 세금계산서 · ${escapeHTML(rcptName)}${thirdTag}</span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span class="badge" style="color:${tColor};background:transparent;border:1px solid currentColor">${tLabel}</span>
+          <button class="abtn" onclick="event.stopPropagation();openTaxPreview('${escapeHTML(inv.id)}')" style="font-size:11px"><i class="ti ti-eye" style="font-size:11px" aria-hidden="true"></i> 보기</button>
+        </span>
+      </div>`;
+    }
+
     // 액션 버튼: 재주문은 항상. 취소는 발송 전(결제완료/준비중), 반품·교환은 배송완료.
     const acts = [];
     acts.push(`<button class="abtn" onclick="event.stopPropagation();reorder('${o.id}')" style="font-size:11px"><i class="ti ti-refresh" style="font-size:12px" aria-hidden="true"></i> 재주문</button>`);
@@ -7624,6 +7828,7 @@ function renderMyOrders() {
           <div class="moc-total">${o.finalAmt.toLocaleString()}원</div>
           <div class="moc-ship">${o.trackingNo ? o.courier + ' ' + o.trackingNo : o.status === '결제완료' ? '배송 준비 중' : ''}</div>
         </div>
+        ${taxRow}
         <div class="moc-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">${acts.join('')}</div>
       </div>`;
   }).join('');
@@ -8657,6 +8862,16 @@ function loadAllFromStorage() {
   if (savedUsers && savedUsers.length) {
     USERS.length = 0;
     savedUsers.forEach(u => USERS.push(u));
+    // 2026-06-11 역할별 테스트 계정 보강 — 저장본에 시드 계정(이메일 기준)이 없으면 추가.
+    // 기존 방문자(localStorage에 구 계정만 있는 경우)도 테스트 계정을 확보하도록.
+    let _seedAdded = 0;
+    SEED_USERS.forEach(su => {
+      if (!USERS.some(u => u.email === su.email)) {
+        USERS.push({ ...su, ...(su.bizInfo ? { bizInfo: { ...su.bizInfo } } : {}) });
+        _seedAdded++;
+      }
+    });
+    if (_seedAdded) saveUsers();
   }
 
   /* 도매사업자 목록 */
@@ -9269,7 +9484,10 @@ async function submitOrderWithToss() {
     // 사업자가 주문서에서 세금계산서 옵션을 체크했으면 결제 직후 신청 생성
     let taxInvId = null;
     const taxReqEl = document.getElementById('co-tax-req');
-    if (isBiz && taxReqEl?.checked) {
+    // 2026-06-11 은행결제 + 사업자일 때만 세금계산서 신청 (카드결제는 섹션이 숨겨짐)
+    if (isBiz && payMethod === '은행결제' && taxReqEl?.checked) {
+      // 발행 대상: self(등록 사업자) / third(제3자)
+      const taxTarget = document.querySelector('input[name="co-tax-target"]:checked')?.value || 'self';
       const recipient = {
         bizName: document.getElementById('co-tax-name').value.trim(),
         bno:     document.getElementById('co-tax-bno').value.trim(),
@@ -9279,10 +9497,11 @@ async function submitOrderWithToss() {
         bizType: document.getElementById('co-tax-biztype').value.trim(),
         bizItem: document.getElementById('co-tax-bizitem').value.trim(),
         name:    document.getElementById('co-tax-name').value.trim(),
+        thirdParty: taxTarget === 'third',  // 제3자 발행 여부 (주문내역 표시용)
       };
-      // 회사 정보 저장 옵션
+      // 회사 정보 저장 — '본인(내 회사)' 발행일 때만 (제3자 정보는 저장하지 않음)
       const saveOpt = document.getElementById('co-tax-save');
-      if (saveOpt?.checked) {
+      if (taxTarget === 'self' && saveOpt?.checked) {
         saveMyBizExtraInfo({
           bizName: recipient.bizName, ceo: recipient.ceo, taxEmail: recipient.taxEmail,
           addr: recipient.addr, bizType: recipient.bizType, bizItem: recipient.bizItem,
@@ -10039,6 +10258,14 @@ async function submitLogin() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// 데모 테스트 계정 자동입력 — 아이디=비밀번호 동일 (2026-06-11)
+function fillDemoLogin(v) {
+  const e = document.getElementById('login-email');
+  const p = document.getElementById('login-pw');
+  if (e) e.value = v;
+  if (p) p.value = v;
 }
 
 // GNB 로그아웃 버튼 (소비자/도매 GNB에도 적용)
