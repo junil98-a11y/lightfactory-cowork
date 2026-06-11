@@ -5,6 +5,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // 평탄 배열을 트리 구조로 변환
 function buildTree(cats: any[], parentId: string | null = null): any[] {
   return cats

@@ -6,6 +6,9 @@ import { prisma }          from '@/lib/prisma'
 import { withAuth }        from '@/lib/middleware'
 import { notifyBizApproved } from '@/lib/notify'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // GET — 회원 목록 (소비자 / 사업자 탭)
 export const GET = withAuth(async (req) => {
   const role = req.nextUrl.searchParams.get('role') || 'consumer'

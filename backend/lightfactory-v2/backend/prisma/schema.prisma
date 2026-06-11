@@ -15,12 +15,45 @@ datasource db {
 
 // ── ENUM ────────────────────────────────────────────────────
 
-enum UserRole        { consumer business admin }
-enum UserStatus      { active inactive }
-enum ApprovalStatus  { pending approved rejected }
-enum PriceTierCode   { consumer T1 T2 T3 }
-enum OrderStatus     { pending paid preparing shipped delivered cancelled refunded }
-enum EcountSyncStatus{ pending sent failed }
+enum UserRole {
+  consumer
+  business
+  admin
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum PriceTierCode {
+  consumer
+  T1
+  T2
+  T3
+}
+
+enum OrderStatus {
+  pending
+  paid
+  preparing
+  shipped
+  delivered
+  cancelled
+  refunded
+}
+
+enum EcountSyncStatus {
+  pending
+  sent
+  failed
+}
 
 // ── 회원 ────────────────────────────────────────────────────
 model User {
@@ -302,8 +335,18 @@ model NotificationLog {
 //  서버 영속화하기 위한 스키마. 마이그레이션: npx prisma migrate dev
 // ════════════════════════════════════════════════════════════
 
-enum RmaType   { cancel return exchange }
-enum RmaStatus { requested approved done rejected }
+enum RmaType {
+  cancel
+  return
+  exchange
+}
+
+enum RmaStatus {
+  requested
+  approved
+  done
+  rejected
+}
 
 // ── 다중 배송지(주소록) — 현장별 직배송 ──────────────────────
 model ShippingAddress {

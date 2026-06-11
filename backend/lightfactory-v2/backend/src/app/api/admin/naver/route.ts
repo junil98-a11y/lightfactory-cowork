@@ -24,6 +24,9 @@ import {
   type NaverProductInput,
 } from '@/lib/naver'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // ── GET — 연동된 상품 목록 / 카테고리 조회 ───────────────────
 export const GET = withAuth(async (req) => {
   const type = req.nextUrl.searchParams.get('type')

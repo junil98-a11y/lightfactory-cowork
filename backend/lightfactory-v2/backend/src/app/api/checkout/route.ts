@@ -11,6 +11,9 @@ import { confirmTossPayment }        from '@/lib/toss'
 import { notifyOrderComplete }       from '@/lib/notify'
 import { z }                         from 'zod'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // ── 주문 준비 (결제창 열기 전 주문번호 생성) ─────────────────
 const prepareSchema = z.object({
   items:        z.array(z.object({ productId: z.string().uuid(), quantity: z.number().int().positive() })).min(1),

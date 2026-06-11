@@ -6,6 +6,9 @@ import { prisma }         from '@/lib/prisma'
 import { withAuth }       from '@/lib/middleware'
 import { notifyShipping } from '@/lib/notify'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // GET /api/admin/orders — 전체 주문 목록
 export const GET = withAuth(async (req) => {
   const p      = req.nextUrl.searchParams

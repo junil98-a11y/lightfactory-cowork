@@ -6,6 +6,9 @@ import { prisma }   from '@/lib/prisma'
 import { withAuth } from '@/lib/middleware'
 import { z }        from 'zod'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // GET /api/cart — 장바구니 조회
 export const GET = withAuth(async (_req, { user }) => {
   const items = await prisma.cartItem.findMany({

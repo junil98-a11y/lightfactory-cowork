@@ -5,6 +5,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma }   from '@/lib/prisma'
 import { withAuth } from '@/lib/middleware'
 
+// API 라우트는 빌드 시 정적 프리렌더 금지(런타임 DB 조회) — 2026-06-11
+export const dynamic = 'force-dynamic'
+
 // GET /api/orders — 내 주문 목록
 export const GET = withAuth(async (req, { user }) => {
   const page  = parseInt(req.nextUrl.searchParams.get('page') || '1')
